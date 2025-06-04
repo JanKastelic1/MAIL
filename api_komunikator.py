@@ -258,7 +258,7 @@ def main():
     sender_email = "src-soc@src.si"
     receiver_email = "src-soc@src.si"
     subject = "HTML Test Email"
-    smtp_server = "172.27.2.70"
+    smtp_server = "esmtp.src.si"
     smtp_port = 25
 
     msg = MIMEMultipart("alternative")
