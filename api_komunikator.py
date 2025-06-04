@@ -4,6 +4,10 @@ import json
 from email.message import EmailMessage
 import win32com.client
 import os
+from datetime import datetime, timezone
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 
 
@@ -27,22 +31,41 @@ results = []
 
 def basicPaloAltoVuln():
 
+    current_month = datetime.now().strftime("%B %Y")
+    current_month_str = str(current_month)
+    wrapped = f"( {current_month_str} )"
+    now = datetime.now(timezone.utc)
+
     for item in data:
+        threatSeverity = item['threatSeverity']
         baseSeverity = item['baseSeverity']
         title = item['title']
         affected = item['affected']
         affected = ', '.join(affected)
+        date = item['date']
+        
+        input_date = datetime.fromisoformat(date.replace("Z", "+00:00"))
+
+        updated = item['updated']
         problem = item['problem'][0]['value']
         solution = item['solution'][0]['value']
+        print("TITLE:", title)
         #print (f'Kritičnost: {baseSeverity}\nNaslov:  {title}\nOkuženi:  {affected}\nProblem: {problem}\nRešitev: {solution};\n')
 
-        if baseSeverity == "CRITICAL":
+        if input_date.month == now.month and input_date.year == now.year:
+            print("Same month")
             new_dict = {'Kriticnost': baseSeverity,
                         'Naslov': title,
+                        'Datum' : date,
+                        'Updated' : updated,
                         'Okuzeni': affected,
                         'Problem': problem,
                         'Resitev': solution}
-        results.append(new_dict)
+            results.append(new_dict)
+        else:
+            print("Different month")
+
+        #print(input_date)
     #print(results)
     return results
 
@@ -164,7 +187,7 @@ def primerjalnikJsona(data_end,data_end_new):
 
 def main():
 
-    rezultati = PaloAltoCriticalEvents()
+    """rezultati = PaloAltoCriticalEvents()
 
     if not os.path.exists("output.json"):
         # First run: save initial data
@@ -211,8 +234,53 @@ def main():
         mail.HTMLBody = email_body3
         mail.Send()
     else:
-        print('Nič za poslati!')
+        print('Nič za poslati!')"""
 
+    #res = basicPaloAltoVuln()
+    #res2 = basicFortiVuln()
+
+    #print(res,res2)
+
+    primer = basicPaloAltoVuln()
+
+    print(primer)
+
+    with open("neki.json", "w", encoding="utf-8") as f1:
+        json.dump(primer, f1, indent=4, ensure_ascii=False)
+
+    email_body3 = "<hr>".join(
+        [
+            "<br>".join([f"<h3>{key}:</h3><p>{value}</p>" for key, value in item.items()])
+            for item in primer
+        ]
+    )
+
+    sender_email = "src-soc@src.si"
+    receiver_email = "src-soc@src.si"
+    subject = "HTML Test Email"
+    smtp_server = "172.27.2.70"
+    smtp_port = 25
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = sender_email
+    msg["To"] = receiver_email
+
+    # Attach HTML content
+    msg.attach(MIMEText(email_body3, "html"))
+
+    with smtplib.SMTP(smtp_server, smtp_port) as server:
+        server.sendmail(sender_email, receiver_email, msg.as_string())
+    
+    """outlook = win32com.client.Dispatch("Outlook.Application")
+    mail = outlook.CreateItem(0)
+    mail.Subject = "Critical CVE Alert"
+    mail.To = "src-soc@src.si"
+    mail.HTMLBody = email_body3
+    mail.Send()"""
+
+    print(email_body3)
+    
 
 if __name__ == "__main__":
     main()
