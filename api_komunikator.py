@@ -5,9 +5,11 @@ from email.message import EmailMessage
 import win32com.client
 import os
 from datetime import datetime, timezone
+from dateutil.relativedelta import relativedelta
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import hashlib
 
 
 
@@ -31,11 +33,16 @@ results = []
 
 def basicPaloAltoVuln():
 
-    current_month = datetime.now().strftime("%B %Y")
-    current_month_str = str(current_month)
-    wrapped = f"( {current_month_str} )"
+    #Trenuten čas in čas za prejšnji mesec
     now = datetime.now(timezone.utc)
 
+    # Get last month by subtracting 1 month using relativedelta
+    last_month = now - relativedelta(months=1)
+
+    #print(last_month)
+    #print(now)
+
+#Zanka, ki gre čez elemente v API jsonu
     for item in data:
         threatSeverity = item['threatSeverity']
         baseSeverity = item['baseSeverity']
@@ -49,11 +56,13 @@ def basicPaloAltoVuln():
         updated = item['updated']
         problem = item['problem'][0]['value']
         solution = item['solution'][0]['value']
-        print("TITLE:", title)
+        #print("TITLE:", title)
         #print (f'Kritičnost: {baseSeverity}\nNaslov:  {title}\nOkuženi:  {affected}\nProblem: {problem}\nRešitev: {solution};\n')
 
+        #Stavek, ki preverja, ce se mesec in leto v API podatkih usklajuje s trenutnim datumom
+        #Ce se, se dictionary appenda v listo results, drugace printa drug mesec
         if input_date.month == now.month and input_date.year == now.year:
-            print("Same month")
+            #print("Same month")
             new_dict = {'Kriticnost': baseSeverity,
                         'Naslov': title,
                         'Datum' : date,
@@ -184,6 +193,13 @@ def primerjalnikJsona(data_end,data_end_new):
     print(koncni_result)
     return koncni_result
 
+def hash_file(path):
+    hasher = hashlib.sha256()
+    with open(path, 'rb') as f:
+        buf = f.read()
+        hasher.update(buf)
+    return hasher.hexdigest()
+
 
 def main():
 
@@ -245,8 +261,32 @@ def main():
 
     print(primer)
 
-    with open("neki.json", "w", encoding="utf-8") as f1:
-        json.dump(primer, f1, indent=4, ensure_ascii=False)
+    #with open("neki.json", "w", encoding="utf-8") as f1:
+        #json.dump(primer, f1, indent=4, ensure_ascii=False)
+
+
+    #Ce ne obstaja se datoteka output.json, se naredi in se vanjo appendajo rezultati
+    #Drugace se podatki iz druge datoteke output2.json shranijo v prvo datoteko 
+    # in potem se novi rezultati zapisejo v output2.json
+    if not os.path.exists("output.json"):
+        # First run: save initial data
+        with open("output.json", "w", encoding="utf-8") as f:
+            json.dump(primer, f, indent=4, ensure_ascii=False)
+        print("Initial output.json created.")
+    else:
+        with open("output2.json", "r", encoding="utf-8") as f2:
+            data_k = json.load(f2)
+
+    # Step 2: Write that content to file1.json (overwriting it)
+        with open("output.json", "w", encoding="utf-8") as f1:
+            json.dump(data_k, f1, indent=4, ensure_ascii=False)
+
+
+
+    with open("output2.json", "w", encoding="utf-8") as f:
+        json.dump(primer, f, indent=4, ensure_ascii=False)
+
+    #HTML struktura za posiljanje
 
     email_body3 = "<hr>".join(
         [
@@ -255,9 +295,11 @@ def main():
         ]
     )
 
+    #Inicializacija postavitve SMTP
+
     sender_email = "src-soc@src.si"
     receiver_email = "src-soc@src.si"
-    subject = "HTML Test Email"
+    subject = "Monthly vulnerabilities report"
     smtp_server = "172.30.3.185"
     smtp_port = 25
 
@@ -269,8 +311,20 @@ def main():
     # Attach HTML content
     msg.attach(MIMEText(email_body3, "html"))
 
-    with smtplib.SMTP(smtp_server, smtp_port) as server:
-        server.sendmail(sender_email, receiver_email, msg.as_string())
+    with open("output2.json", "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    #Izracunata se dva hasha za obe datoteki, ce output2.json ni prazen
+    # in ce sta hasha razlicna, kar pomeni, da sta datoteki razlicni
+    # potem se poslje mail 
+    initial_hash = hash_file("output.json")
+    new_hash = hash_file("output2.json")
+
+    if data and (initial_hash != new_hash):
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.sendmail(sender_email, receiver_email, msg.as_string())
+    else:
+        print("Nic za poslati.")
     
     """outlook = win32com.client.Dispatch("Outlook.Application")
     mail = outlook.CreateItem(0)
@@ -279,7 +333,7 @@ def main():
     mail.HTMLBody = email_body3
     mail.Send()"""
 
-    print(email_body3)
+    #print(email_body3)
     
 
 if __name__ == "__main__":
